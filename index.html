@@ -289,20 +289,42 @@
     }, 1000);
   }
 
-  // 1er toucher n'importe où sur l'écran d'intro -> bip spatial immédiat (débloque le son sur iPhone)
-  var beeped = false;
-  $("intro").addEventListener("touchstart", function () { if (!beeped) { beeped = true; spaceBeep(); } }, { passive: true });
+  // ---- Jingles des boutons ----
+  // notes : [fréquence Hz, début s, durée s]
+  function jingle(notes, type, vol) {
+    try {
+      var c = getCtx(), t = c.currentTime + 0.01;
+      notes.forEach(function (n) {
+        var o = c.createOscillator(), g = c.createGain();
+        o.type = type || "triangle"; o.frequency.value = n[0];
+        g.gain.setValueAtTime(0.0001, t + n[1]);
+        g.gain.exponentialRampToValueAtTime(vol || 0.35, t + n[1] + 0.01);
+        g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + n[2]);
+        o.connect(g); g.connect(c.destination); o.start(t + n[1]); o.stop(t + n[1] + n[2] + 0.02);
+      });
+    } catch (e) {}
+  }
+  var SND = {
+    // validation « accès autorisé » : deux bips clairs qui montent + note finale tenue
+    valid:   function () { jingle([[988,0,.12],[1319,.13,.12],[1976,.27,.35]], "square", .18); },
+    answer:  function () { jingle([[660,0,.08],[990,.08,.14]], "sine", .4); },          // décroché
+    decline: function () { jingle([[520,0,.12],[330,.12,.22]], "sine", .4); },          // raccroché
+    yes:     function () { jingle([[523,0,.12],[659,.11,.12],[784,.22,.12],[1047,.33,.45]], "triangle", .4); }, // fanfare
+    no:      function () { jingle([[392,0,.16],[311,.16,.16],[233,.32,.4]], "sawtooth", .15); },             // échec
+    retry:   function () { jingle([[784,0,.08],[1047,.08,.08],[1319,.16,.2]], "triangle", .35); }
+  };
+
   $("go").addEventListener("click", function () {
     clearInterval(introBeep);
-    if (!beeped) { beeped = true; spaceBeep(); }
-    var b = $("go"); b.disabled = true; b.textContent = "CONNEXION…";
-    setTimeout(function () { show("ring"); startRing(); }, 1300);
+    SND.valid();
+    var b = $("go"); b.disabled = true; b.textContent = "CONNEXION ÉTABLIE ✓";
+    setTimeout(function () { show("ring"); startRing(); }, 1100);
   });
-  $("answer").addEventListener("click", startCall);
-  $("decline").addEventListener("click", function () { stopRing(); show("refused"); });
-  $("yes").addEventListener("click", function () { show("reveal"); buzz([100, 60, 100, 60, 300]); speakMission(); });
-  $("no").addEventListener("click", function () { show("refused"); });
-  $("retry").addEventListener("click", function () { show("choice"); });
+  $("answer").addEventListener("click", function () { SND.answer(); startCall(); });
+  $("decline").addEventListener("click", function () { stopRing(); SND.decline(); show("refused"); });
+  $("yes").addEventListener("click", function () { SND.yes(); show("reveal"); buzz([100, 60, 100, 60, 300]); speakMission(); });
+  $("no").addEventListener("click", function () { SND.no(); show("refused"); });
+  $("retry").addEventListener("click", function () { SND.retry(); show("choice"); });
 })();
 </script>
 </body>
