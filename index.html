@@ -4,26 +4,45 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="robots" content="noindex">
+<meta name="theme-color" content="#05080a">
 <title>Protocole Élu</title>
 <style>
   :root { --bg:#05080a; --fg:#39ff88; --red:#ff3b3b; --dim:#1b6b3f; }
   * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
   html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
-    font-family: "Courier New", ui-monospace, monospace; overflow:hidden; }
-  body::after { content:""; position:fixed; inset:0; pointer-events:none;
+    font-family: "Courier New", ui-monospace, monospace; overflow:hidden; -webkit-user-select:none; user-select:none; }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none; z-index:20;
     background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
+  /* vignette rouge qui pulse quand le danger monte */
+  body::before { content:""; position:fixed; inset:0; pointer-events:none; z-index:19; opacity:0;
+    background: radial-gradient(ellipse at center, transparent 45%, rgba(255,0,0,.55) 100%); }
+  body.danger::before { animation: alarm .5s ease-in-out infinite alternate; }
+  @keyframes alarm { from{opacity:.15} to{opacity:1} }
+
   .screen { position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
-    justify-content:center; padding:max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
-    text-align:center; gap:22px; }
-  .screen.on { display:flex; }
+    justify-content:center; padding:max(24px, env(safe-area-inset-top)) 22px max(24px, env(safe-area-inset-bottom));
+    text-align:center; gap:20px; }
+  .screen.on { display:flex; animation: appear .35s ease-out; }
+  @keyframes appear { from{opacity:0; transform:scale(1.04)} to{opacity:1; transform:none} }
   h1 { font-size:1.5rem; letter-spacing:.12em; margin:0; line-height:1.3; }
   p { margin:0; line-height:1.5; }
   .small { font-size:.8rem; color:var(--dim); }
   button { font:inherit; font-size:1.05rem; letter-spacing:.08em; padding:16px 22px; min-width:240px;
-    background:transparent; color:var(--fg); border:2px solid var(--fg); border-radius:10px; cursor:pointer; }
+    background:transparent; color:var(--fg); border:2px solid var(--fg); border-radius:10px; cursor:pointer;
+    transition: transform .25s cubic-bezier(.3,1.6,.5,1), opacity .4s; }
   button:active { background:var(--fg); color:var(--bg); }
   button.danger { color:var(--red); border-color:var(--red); }
   button.danger:active { background:var(--red); color:var(--bg); }
+  .glow { box-shadow:0 0 18px rgba(57,255,136,.45), inset 0 0 12px rgba(57,255,136,.25); animation: breathe 1.6s ease-in-out infinite; }
+  @keyframes breathe { 50% { box-shadow:0 0 30px rgba(57,255,136,.8), inset 0 0 18px rgba(57,255,136,.4); } }
+
+  /* intro : terminal */
+  #term { text-align:left; font-size:.9rem; line-height:1.55; width:100%; max-width:420px; min-height:9.5em;
+    white-space:pre-wrap; margin:0; color:var(--fg); }
+  #term .warn { color:var(--red); } #term .ok { color:#fff; }
+  #intro h1 { color:var(--red); animation:blink 1.2s steps(1) infinite; }
+  #go.hidden { opacity:0; pointer-events:none; transform:translateY(10px); }
+  #intro.granted h1 { color:#fff; animation:none; text-shadow:0 0 18px var(--fg); }
 
   /* appel entrant */
   #ring { background: radial-gradient(circle at 50% 30%, #12202a, #05080a 70%); color:#e8f1f5; }
@@ -35,11 +54,25 @@
   .green { background:#2ecc71; color:#fff; animation:shake .6s infinite; }
   .red { background:#e74c3c; color:#fff; }
   @keyframes shake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-12deg)} 75%{transform:rotate(12deg)} }
+  .gtext { text-shadow: 3px 0 #ff0040, -3px 0 #00e5ff; transform: skewX(-8deg); }
 
   /* appel en cours */
-  #bar { position:absolute; top:max(16px, env(safe-area-inset-top)); left:0; right:0; font-size:.85rem; color:var(--red);
-    letter-spacing:.1em; }
-  #msg { font-size:1.2rem; text-align:left; min-height:11em; white-space:pre-wrap; width:100%; max-width:480px; }
+  #bar { position:absolute; top:max(16px, env(safe-area-inset-top)); left:0; right:0; font-size:.8rem; color:var(--red); letter-spacing:.1em; }
+  .radar { width:84px; height:84px; border-radius:50%; position:relative; flex:none; overflow:hidden;
+    border:1px solid var(--dim); background:
+      radial-gradient(circle, transparent 30%, rgba(57,255,136,.15) 31%, transparent 32%, transparent 62%, rgba(57,255,136,.15) 63%, transparent 64%),
+      linear-gradient(transparent 49.5%, rgba(57,255,136,.2) 50%, transparent 50.5%),
+      linear-gradient(90deg, transparent 49.5%, rgba(57,255,136,.2) 50%, transparent 50.5%); }
+  .sweep { position:absolute; inset:0; border-radius:50%; animation: spin 2s linear infinite;
+    background: conic-gradient(from 0deg, rgba(57,255,136,.55), transparent 25%); }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .blip { position:absolute; width:8px; height:8px; border-radius:50%; background:var(--red); left:62%; top:30%;
+    box-shadow:0 0 10px var(--red); animation: blink .6s steps(1) infinite; }
+  .track { width:100%; max-width:420px; height:6px; background:#0d2016; border-radius:4px; overflow:hidden; flex:none; }
+  #trk { height:100%; width:0%; background:var(--fg); transition: width 1s linear, background .3s; }
+  body.danger #trk { background:var(--red); }
+  #trktxt { margin-top:-12px; }
+  #msg { font-size:1.15rem; text-align:left; min-height:9.5em; white-space:pre-wrap; width:100%; max-width:440px; }
   .cursor::after { content:"▌"; animation:blink 1s steps(1) infinite; }
   @keyframes blink { 50% { opacity:0; } }
 
@@ -49,34 +82,59 @@
     0%{transform:translate(0,0) skew(0)} 20%{transform:translate(-6px,3px) skew(3deg)}
     40%{transform:translate(5px,-4px) skew(-4deg)} 60%{transform:translate(-3px,-2px)}
     80%{transform:translate(6px,2px) skew(2deg)} 100%{transform:translate(0,0)} }
-  #count { font-size:5rem; color:var(--red); font-weight:bold; }
-  #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:9; }
+  #boom { background: radial-gradient(circle, #2a0000, #05080a 70%); }
+  #boom h1 { color:var(--red); text-shadow: 3px 0 #ff0040, -3px 0 #00e5ff; }
+  #count { font-size:6rem; color:var(--red); font-weight:bold; line-height:1; text-shadow: 4px 0 #ff0040, -4px 0 #00e5ff; }
+  #count.pop { animation: countpop .9s ease-out; }
+  @keyframes countpop { 0%{transform:scale(2.4); opacity:0} 20%{opacity:1} 100%{transform:scale(1)} }
+  #burn { max-width:440px; text-align:left; font-size:1.05rem; color:#ff8080; }
+  #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:30; }
 
-  /* écran de démarrage (débloque le son) */
-  #intro h1 { color:var(--red); animation:blink 1.2s steps(1) infinite; }
-  #intro .sig { font-size:.9rem; color:var(--dim); letter-spacing:.15em; }
+  /* après l'explosion */
+  #phew .big { font-size:4rem; animation: wobble 1s ease-in-out infinite; }
+  @keyframes wobble { 25%{transform:rotate(-10deg)} 75%{transform:rotate(10deg)} }
+  #phew { color:#fff; }
 
+  /* choix */
+  #no { position:relative; }
+  #choice h1 { text-shadow:0 0 14px var(--fg); }
+
+  /* décryptage */
+  #hex { font-size:.9rem; color:var(--dim); word-break:break-all; max-width:420px; min-height:5.5em; }
+  #dbar { width:100%; max-width:420px; height:10px; border:1px solid var(--fg); border-radius:6px; overflow:hidden; }
+  #dfill { height:100%; width:0; background:var(--fg); }
+
+  /* révélation */
+  #reveal { background: radial-gradient(circle at 50% 40%, #0f2a1c, #05080a 70%); }
   #mission { font-size:1.9rem; line-height:1.3; color:#fff; text-shadow:0 0 14px var(--fg); }
-  .stamp { border:3px solid var(--fg); padding:6px 14px; transform:rotate(-4deg); letter-spacing:.2em; }
+  .stamp { border:4px solid var(--fg); padding:8px 16px; transform:rotate(-6deg); letter-spacing:.2em; font-weight:bold; font-size:1.1rem; }
+  .stamp.slam { animation: slam .45s cubic-bezier(.2,1.6,.4,1) both; }
+  @keyframes slam { 0%{transform:scale(4) rotate(-20deg); opacity:0} 100%{transform:scale(1) rotate(-6deg); opacity:1} }
+  #mtimer { font-size:.95rem; color:#fff; letter-spacing:.1em; }
+  #mtimer b { color:var(--red); font-size:1.3rem; }
+  .shake-once { animation: shk .4s; }
+  @keyframes shk { 20%{transform:translate(-8px,4px)} 40%{transform:translate(7px,-5px)} 60%{transform:translate(-5px,-3px)} 80%{transform:translate(4px,3px)} }
+
+  #fx { position:fixed; inset:0; pointer-events:none; z-index:25; }
 </style>
 </head>
 <body>
 
-<!-- 00. Démarrage : un toucher est obligatoire pour que le téléphone autorise le son -->
+<!-- 00. Démarrage : scan + bouton (un toucher est obligatoire pour que le téléphone autorise le son) -->
 <section id="intro" class="screen on">
-  <p class="sig">▮▮▮▯▯ SIGNAL CRYPTÉ</p>
-  <h1>⚠ TRANSMISSION ENTRANTE</h1>
-  <p style="color:#9ab">Une communication confidentielle t’est destinée.</p>
-  <button id="go">ÉTABLIR LA CONNEXION</button>
-  <p class="small">Monte le son.</p>
+  <p class="small">▮▮▮▯▯ CANAL CRYPTÉ · PROTOCOLE ÉLU</p>
+  <h1 id="ih">⚠ TRANSMISSION ENTRANTE</h1>
+  <pre id="term"></pre>
+  <button id="go" class="glow hidden">ÉTABLIR LA CONNEXION</button>
+  <p class="small">🔊 Monte le son.</p>
 </section>
 
 <!-- 0. Appel entrant -->
 <section id="ring" class="screen">
   <p class="small" style="color:#8aa">Appel entrant…</p>
   <div class="avatar">?</div>
-  <h1 style="color:#fff">NUMÉRO MASQUÉ</h1>
-  <p style="color:#9ab">Mobile · appel chiffré</p>
+  <h1 id="caller" style="color:#fff">NUMÉRO MASQUÉ</h1>
+  <p style="color:#9ab">Appel chiffré · Origine : inconnue</p>
   <div class="callrow">
     <button class="round red" id="decline" aria-label="Refuser">✕</button>
     <button class="round green" id="answer" aria-label="Répondre">✆</button>
@@ -86,47 +144,73 @@
 <!-- 1. Message mystérieux -->
 <section id="call" class="screen">
   <div id="bar">● APPEL SÉCURISÉ — LOCALISATION DANS <span id="loc">20</span> s</div>
+  <div class="radar"><div class="sweep"></div><div class="blip"></div></div>
+  <div class="track"><div id="trk"></div></div>
+  <p class="small" id="trktxt">TRIANGULATION DU SIGNAL : 0 %</p>
   <p id="msg" class="cursor"></p>
 </section>
 
 <!-- 2. Autodestruction -->
 <section id="boom" class="screen">
-  <p>⚠ MESSAGE COMPROMIS ⚠</p>
+  <h1>⚠ SIGNAL REPÉRÉ ⚠</h1>
+  <p class="small" style="color:#ff8080">AUTODESTRUCTION DU MESSAGE</p>
   <div id="count">3</div>
-  <p id="burn" style="max-width:480px;text-align:left;font-size:1.1rem"></p>
+  <p id="burn"></p>
+</section>
+
+<!-- 2b. Après l'explosion (blague) -->
+<section id="phew" class="screen">
+  <div class="big">📱</div>
+  <h1>…ton téléphone<br>est intact.</h1>
+  <p class="small">(C’était juste pour l’ambiance. Respire.)</p>
 </section>
 
 <!-- 3. Choix -->
 <section id="choice" class="screen">
   <p class="small">TRANSMISSION INTERROMPUE</p>
   <h1>ACCEPTES-TU<br>LA MISSION ?</h1>
-  <button id="yes">ACCEPTER LA MISSION</button>
+  <button id="yes" class="glow">ACCEPTER LA MISSION</button>
   <button id="no" class="danger">REFUSER LA MISSION</button>
+</section>
+
+<!-- 3b. Décryptage -->
+<section id="decrypt" class="screen">
+  <h1>DÉCRYPTAGE<br>DE LA MISSION…</h1>
+  <div id="dbar"><div id="dfill"></div></div>
+  <p id="hex"></p>
 </section>
 
 <!-- 4a. Révélation -->
 <section id="reveal" class="screen">
-  <div class="stamp">MISSION CONFIRMÉE</div>
+  <div class="stamp" id="stamp">MISSION CONFIRMÉE</div>
   <p class="small">TA MISSION, SI TU L’ACCEPTES :</p>
   <p id="mission">EMBRASSER LA PERSONNE QUI PORTE CE T-SHIRT.</p>
+  <p id="mtimer">TEMPS IMPARTI : <b id="mt">60</b> s</p>
   <p class="small">(Un baiser sur la joue, la main, ou même une bise<br>si vous en avez envie tous les deux.<br>Sinon : un high five fera l’affaire. 🙂)</p>
 </section>
 
 <!-- 4b. Refus -->
 <section id="refused" class="screen">
+  <div style="font-size:3rem">😢</div>
   <h1>MISSION REFUSÉE</h1>
-  <p>Cette conversation ne s’est jamais produite.<br>Va en paix, agent.</p>
-  <button id="retry">…finalement, j’ai changé d’avis</button>
+  <p>Cette conversation ne s’est jamais produite.<br>Le Q.G. est… très déçu.</p>
+  <button id="retry" class="glow">…finalement, j’ai changé d’avis</button>
 </section>
 
 <div id="flash"></div>
+<canvas id="fx"></canvas>
 
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var screens = ["intro","ring","call","boom","choice","reveal","refused"];
+  var screens = ["intro","ring","call","boom","phew","choice","decrypt","reveal","refused"];
   function show(id) { screens.forEach(function (s) { $(s).classList.toggle("on", s === id); }); }
   function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
+  function flash(color, ms) {
+    var f = $("flash"); f.style.background = color || "#fff"; f.style.transition = "none"; f.style.opacity = 1;
+    setTimeout(function () { f.style.transition = "opacity " + (ms || 600) + "ms"; f.style.opacity = 0; }, 60);
+  }
+  function shakeScreen() { document.body.classList.remove("shake-once"); void document.body.offsetWidth; document.body.classList.add("shake-once"); }
 
   var TEXT = "Allô ? Écoute-moi attentivement !\n\nJe n’ai que quelques secondes avant que cet appel soit localisé.\n\nTu as été choisi. Tu détiens un pouvoir exceptionnel.\n\nUne mission de la plus haute importance t’attend.";
   var SPOKEN = "Allô ? Écoute-moi attentivement ! Je n’ai que quelques secondes avant que cet appel soit localisé. Tu as été choisi. Tu détiens un pouvoir exceptionnel. Une mission de la plus haute importance t’attend.";
@@ -391,23 +475,122 @@
   }
   try { speechSynthesis.getVoices(); } catch (e) {}
 
+  /* ---------------- sons supplémentaires ---------------- */
+  // battement de cœur (tension)
+  SND.heart = safe(function () { tone(62, 0, .14, "sine", .9, 40); tone(55, .2, .16, "sine", .65, 38); });
+  // roulement de tambour qui monte (dur en s)
+  SND.drumroll = safe(function (dur) {
+    var n = Math.floor(dur / 0.045);
+    for (var k = 0; k < n; k++) { var v = .05 + .35 * (k / n); noise(k * .045, .05, v, "bandpass", 900 + k * 8, null, 1.2); }
+    tone(70, 0, dur, "sine", .25, 110);
+  });
+  // cymbale + coup de tampon
+  SND.crash = safe(function () { noise(0, 1.8, .45, "highpass", 5000, 7000, .7); noise(0, .4, .5, "lowpass", 900, 200); });
+  SND.thud  = safe(function () { tone(140, 0, .3, "sine", .9, 45); noise(0, .12, .4, "lowpass", 1200, 300); });
+  // pop des confettis
+  SND.pop = safe(function () { var f = 500 + Math.random() * 700; tone(f, 0, .09, "sine", .18, f * 2.2); });
+  // sifflet qui se dégonfle (blague « ton téléphone est intact »)
+  SND.deflate = safe(function () {
+    var c = getCtx(), o = tone(1500, 0, 1.3, "sine", .22, 180);
+    var lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 9; lg.gain.value = 40;
+    lfo.connect(lg); lg.connect(o.frequency); lfo.start(); lfo.stop(c.currentTime + 1.4);
+    tone(300, 1.35, .12, "triangle", .3); tone(200, 1.5, .25, "triangle", .3);
+  });
+  // le bouton refuser s'échappe : « boing » + « nan nan »
+  SND.dodge = safe(function () { tone(250, 0, .2, "sine", .35, 1100); tone(700, .2, .07, "square", .08); tone(560, .29, .1, "square", .08); });
+  // bip de terminal
+  SND.tick = safe(function () { tone(1600, 0, .03, "square", .05); });
+  // fin du chrono de mission
+  SND.done = safe(function () { [[784,0],[988,.12],[1175,.24],[1568,.36]].forEach(function (n) { tone(n[0], n[1], .2, "triangle", .3); }); });
+  // grésillement de glitch court (nom de l'appelant)
+  SND.zap = safe(function () { noise(0, .12, .12, "bandpass", 3000, 800, 3); });
+
+  /* ---------------- confettis / cœurs ---------------- */
+  var cv = $("fx"), cx2 = cv.getContext("2d"), parts = [], raf = null;
+  function fit() { var r = window.devicePixelRatio || 1; cv.width = innerWidth * r; cv.height = innerHeight * r; cx2.setTransform(r, 0, 0, r, 0, 0); }
+  fit(); window.addEventListener("resize", fit);
+  function burst(n, emojis) {
+    for (var i = 0; i < n; i++) parts.push({
+      x: innerWidth / 2, y: innerHeight * .42, vx: (Math.random() - .5) * 14, vy: -Math.random() * 14 - 4,
+      r: Math.random() * 6.28, vr: (Math.random() - .5) * .3, s: 18 + Math.random() * 18, life: 0,
+      e: emojis[Math.floor(Math.random() * emojis.length)] });
+    if (!raf) loop();
+  }
+  function loop() {
+    cx2.clearRect(0, 0, innerWidth, innerHeight);
+    parts = parts.filter(function (p) { return p.life < 220 && p.y < innerHeight + 60; });
+    parts.forEach(function (p) {
+      p.life++; p.vy += .35; p.vx *= .99; p.x += p.vx; p.y += p.vy; p.r += p.vr;
+      cx2.save(); cx2.translate(p.x, p.y); cx2.rotate(p.r); cx2.font = p.s + "px serif";
+      cx2.textAlign = "center"; cx2.fillText(p.e, 0, 0); cx2.restore();
+    });
+    raf = parts.length ? requestAnimationFrame(loop) : null;
+    if (!raf) cx2.clearRect(0, 0, innerWidth, innerHeight);
+  }
+
   /* =========================================================
      DÉROULÉ
      ========================================================= */
-  var typer, clock, ended = false;
+  // ---- intro : faux scan biométrique ----
+  var LINES = [
+    ["> Connexion au satellite Ω-7… ", "OK", "ok"],
+    ["> Scan biométrique du porteur… ", "OK", "ok"],
+    ["> Niveau de charisme : ", "ANORMALEMENT ÉLEVÉ", "warn"],
+    ["> Correspondance profil : ", "99,7 %", "ok"],
+    ["> Statut : ", "TU ES L’ÉLU(E).", "warn"]
+  ];
+  (function typeTerm() {
+    var term = $("term"), li = 0;
+    function nextLine() {
+      if (li >= LINES.length) { $("go").classList.remove("hidden"); return; }
+      var L = LINES[li++], txt = L[0], k = 0, span = document.createElement("span");
+      term.appendChild(span);
+      var t = setInterval(function () {
+        span.textContent = txt.slice(0, ++k);
+        if (k >= txt.length) {
+          clearInterval(t);
+          setTimeout(function () {
+            var r = document.createElement("span"); r.className = L[2]; r.textContent = L[1] + "\n"; term.appendChild(r);
+            if (unlocked) SND.tick();
+            setTimeout(nextLine, 260);
+          }, 380);
+        }
+      }, 22);
+    }
+    setTimeout(nextLine, 400);
+  })();
+
+  // ---- appel entrant : le nom de l'appelant « glitche » ----
+  var callerTimer = null;
+  function startCallerGlitch() {
+    var names = ["Q.G. ▓▓▓▓▓", "AGENT ██", "PROTOCOLE ÉLU", "NUMÉRO MASQUÉ"], el = $("caller"), k = 0;
+    callerTimer = setInterval(function () {
+      el.textContent = names[k++ % 3]; el.classList.add("gtext"); SND.zap();
+      setTimeout(function () { el.textContent = "NUMÉRO MASQUÉ"; el.classList.remove("gtext"); }, 260);
+    }, 2300);
+  }
+
+  var typer, clock, ended = false, heartT = null;
   function finishCall() {
     if (ended) return; ended = true;
-    clearInterval(clock); clearInterval(typer); $("msg").textContent = TEXT; $("loc").textContent = 0;
+    clearInterval(clock); clearInterval(typer); clearTimeout(heartT);
+    $("msg").textContent = TEXT; $("loc").textContent = 0; $("trk").style.width = "100%";
     stopAmbience();
     selfDestruct();
   }
+  // battements de cœur qui accélèrent
+  function heartbeat(interval) {
+    if (ended) return;
+    SND.heart(); buzz(60);
+    heartT = setTimeout(function () { heartbeat(Math.max(380, interval * 0.88)); }, interval);
+  }
 
   function startCall() {
-    stopRing();
+    stopRing(); clearInterval(callerTimer);
     show("call");
     speak();
     startAmbience();
-    var i = 0, msg = $("msg"), loc = $("loc"), left = 20;
+    var i = 0, msg = $("msg"), loc = $("loc"), left = 20, total = 20;
     typer = setInterval(function () {
       i++; msg.textContent = TEXT.slice(0, i);
       if (i % 2 === 0 && TEXT[i - 1] !== " ") SND.key();
@@ -415,6 +598,9 @@
     }, 13000 / TEXT.length);
     clock = setInterval(function () {
       left--; loc.textContent = Math.max(left, 0); SND.locate(left);
+      var pct = Math.min(100, Math.round((total - left) / total * 100 + Math.random() * 4));
+      $("trk").style.width = pct + "%"; $("trktxt").textContent = "TRIANGULATION DU SIGNAL : " + pct + " %";
+      if (left === 13) { document.body.classList.add("danger"); heartbeat(900); }
       if (left <= 0) finishCall();
     }, 1000);
   }
@@ -422,11 +608,13 @@
   function selfDestruct() {
     try { speechSynthesis.cancel(); } catch (e) {}
     show("boom");
-    document.body.classList.add("glitch");
+    document.body.classList.add("glitch", "danger");
     buzz([200, 100, 200, 100, 600]);
     siren(3);
     var chars = TEXT.split(""), burn = $("burn"), noiseCh = "#@%&$*?!/\\<>01";
-    var n = 3; $("count").textContent = n; SND.count(n);
+    var n = 3, cnt = $("count");
+    function setCount(v) { cnt.textContent = v; cnt.classList.remove("pop"); void cnt.offsetWidth; cnt.classList.add("pop"); }
+    setCount(n); SND.count(n);
     var tick = setInterval(function () {
       for (var k = 0; k < 14; k++) {
         var r = Math.floor(Math.random() * chars.length);
@@ -436,34 +624,103 @@
       SND.glitch();
     }, 90);
     var cd = setInterval(function () {
-      n--; $("count").textContent = n > 0 ? n : "0"; buzz(150);
-      if (n > 0) SND.count(n);
+      n--; buzz(150);
+      if (n > 0) { setCount(n); SND.count(n); }
       if (n <= 0) {
         clearInterval(cd); clearInterval(tick);
-        SND.boom(); buzz([500]);
-        var f = $("flash"); f.style.transition = "none"; f.style.opacity = 1;
+        SND.boom(); buzz([600]);
+        document.body.classList.remove("glitch", "danger");
+        flash("#fff", 1400);
+        // écran noir un instant… puis la blague
+        show("none");
         setTimeout(function () {
-          document.body.classList.remove("glitch");
-          show("choice");
-          f.style.transition = "opacity .6s"; f.style.opacity = 0;
-          setTimeout(SND.suspense, 900);
-        }, 120);
+          show("phew"); SND.deflate();
+          setTimeout(function () { show("choice"); SND.suspense(); }, 2600);
+        }, 1300);
       }
     }, 1000);
   }
 
+  // ---- bouton « refuser » qui s'enfuit ----
+  var dodges = 0, DODGE_TXT = ["T’ES SÛR(E) ? 🤨", "VRAIMENT VRAIMENT ?", "LE Q.G. VA PLEURER… 😭"];
+  function dodge() {
+    var b = $("no"), yb = $("yes");
+    b.textContent = DODGE_TXT[dodges]; dodges++;
+    // positions « naturelles » (offsetLeft/Top ne tiennent pas compte de la transformation en cours)
+    var bl = b.offsetLeft, bt = b.offsetTop, bw = b.offsetWidth, bh = b.offsetHeight;
+    var yl = yb.offsetLeft, yt = yb.offsetTop, yw = yb.offsetWidth, yh = yb.offsetHeight;
+    var W = b.offsetParent.clientWidth, H = b.offsetParent.clientHeight, x = 0, y = 0;
+    // position aléatoire dans l'écran, sans jamais recouvrir le bouton « accepter »
+    for (var tries = 0; tries < 60; tries++) {
+      var nx = 12 + Math.random() * Math.max(0, W - bw - 24), ny = 70 + Math.random() * Math.max(0, H - bh - 140);
+      var overlap = !(nx + bw < yl - 10 || nx > yl + yw + 10 || ny + bh < yt - 16 || ny > yt + yh + 16);
+      if (!overlap) { x = nx - bl; y = ny - bt; break; }
+    }
+    b.style.transform = "translate(" + Math.round(x) + "px," + Math.round(y) + "px) rotate(" + Math.round((Math.random() - .5) * 16) + "deg)";
+    SND.dodge(); buzz(40);
+  }
+
+  // ---- révélation cinématographique ----
+  var mtT = null;
+  function reveal() {
+    show("decrypt");
+    SND.drumroll(2.2);
+    var fill = $("dfill"), hex = $("hex"), t0 = Date.now(), H = "0123456789ABCDEF";
+    var dt = setInterval(function () {
+      var p = Math.min(1, (Date.now() - t0) / 2200);
+      fill.style.width = (p * 100) + "%";
+      var s = ""; for (var k = 0; k < 64; k++) s += H[Math.floor(Math.random() * 16)] + (k % 2 ? " " : "");
+      hex.textContent = s;
+      if (p >= 1) {
+        clearInterval(dt);
+        SND.crash(); SND.thud(); flash("#39ff88", 700); shakeScreen(); buzz([100, 60, 100, 60, 300]);
+        show("reveal");
+        var st = $("stamp"); st.classList.remove("slam"); void st.offsetWidth; st.classList.add("slam");
+        burst(70, ["💋", "❤️", "✨", "🎉", "💚", "💥"]);
+        for (var q = 0; q < 8; q++) setTimeout(SND.pop, 120 + q * 70);
+        setTimeout(SND.yes, 300);
+        setTimeout(speakMission, 1200);
+        // chrono de mission
+        var m = 60; $("mt").textContent = m; clearInterval(mtT);
+        $("mtimer").innerHTML = "TEMPS IMPARTI : <b id=\"mt\">60</b> s";
+        mtT = setInterval(function () {
+          m--; $("mt").textContent = m;
+          if (m <= 10 && m > 0) SND.tick();
+          if (m <= 0) {
+            clearInterval(mtT); SND.done(); burst(40, ["❤️", "💋", "✨"]);
+            $("mtimer").innerHTML = "⏱ TEMPS ÉCOULÉ.<br>Le Q.G. espère que c’est fait. 😏";
+          }
+        }, 1000);
+      }
+    }, 70);
+  }
+
+  /* ---------------- boutons ---------------- */
   $("go").addEventListener("click", function () {
     clearInterval(introBeep);
     unlockAudio();
     SND.valid();
-    var b = $("go"); b.disabled = true; b.textContent = "CONNEXION ÉTABLIE ✓";
-    setTimeout(function () { show("ring"); startRing(); }, 1100);
+    $("intro").classList.add("granted"); $("ih").textContent = "✓ ACCÈS AUTORISÉ";
+    var b = $("go"); b.disabled = true; b.textContent = "CONNEXION ÉTABLIE";
+    flash("#39ff88", 500);
+    setTimeout(function () { show("ring"); startRing(); startCallerGlitch(); }, 1300);
   });
   $("answer").addEventListener("click", function () { SND.answer(); startCall(); });
-  $("decline").addEventListener("click", function () { stopRing(); SND.decline(); show("refused"); });
-  $("yes").addEventListener("click", function () { SND.yes(); show("reveal"); buzz([100, 60, 100, 60, 300]); speakMission(); });
-  $("no").addEventListener("click", function () { SND.no(); show("refused"); });
-  $("retry").addEventListener("click", function () { SND.retry(); show("choice"); });
+  $("decline").addEventListener("click", function () { stopRing(); clearInterval(callerTimer); SND.decline(); show("refused"); });
+  $("yes").addEventListener("click", function () {
+    // débloque la voix dans le geste (iPhone), elle parlera après le roulement de tambour
+    try { var u = new SpeechSynthesisUtterance(" "); u.volume = 0; speechSynthesis.speak(u); } catch (e) {}
+    SND.valid(); reveal();
+  });
+  $("no").addEventListener("click", function () {
+    if (dodges < DODGE_TXT.length) { dodge(); return; }
+    SND.no(); show("refused");
+  });
+  $("retry").addEventListener("click", function () {
+    SND.retry(); dodges = 0;
+    var b = $("no"); b.style.transform = ""; b.textContent = "REFUSER LA MISSION";
+    show("choice");
+  });
 })();
 </script>
 </body>
