@@ -131,96 +131,253 @@
   var TEXT = "Allô ? Écoute-moi attentivement !\n\nJe n’ai que quelques secondes avant que cet appel soit localisé.\n\nTu as été choisi. Tu détiens un pouvoir exceptionnel.\n\nUne mission de la plus haute importance t’attend.";
   var SPOKEN = "Allô ? Écoute-moi attentivement ! Je n’ai que quelques secondes avant que cet appel soit localisé. Tu as été choisi. Tu détiens un pouvoir exceptionnel. Une mission de la plus haute importance t’attend.";
 
-  // ---- Sonnerie de téléphone (générée, aucun fichier audio) ----
-  var ctx = null, ringTimer = null, ringNodes = [];
-  function ringBurst() {
-    // motif « drrring-drrring » : 2 salves de 0,4 s, fréquences 440+480 Hz trillées
-    var t0 = ctx.currentTime;
-    [0, 0.6].forEach(function (off) {
-      var g = ctx.createGain(); g.gain.value = 0; g.connect(ctx.destination);
-      [440, 480].forEach(function (f) {
-        var o = ctx.createOscillator(); o.type = "square"; o.frequency.value = f;
-        o.connect(g); o.start(t0 + off); o.stop(t0 + off + 0.45); ringNodes.push(o);
-      });
-      // trille : le volume pulse 20 fois par seconde
-      for (var k = 0; k < 8; k++) {
-        var tk = t0 + off + k * 0.05;
-        g.gain.setValueAtTime(0.18, tk); g.gain.setValueAtTime(0.0, tk + 0.025);
+  /* =========================================================
+     MOTEUR AUDIO (tout est synthétisé, aucun fichier son)
+     ========================================================= */
+  var IOS = /iPhone|iPad|iPod/.test(navigator.userAgent) ||
+            (navigator.platform === "MacIntel" && navigator.maxTouchPoints > 1);
+  var ctx = null, master = null, unlocked = false;
+
+  function getCtx() {
+    if (!ctx) {
+      ctx = new (window.AudioContext || window.webkitAudioContext)();
+      var comp = ctx.createDynamicsCompressor(); comp.connect(ctx.destination);
+      master = ctx.createGain(); master.gain.value = 0.9; master.connect(comp);
+    }
+    if (ctx.state !== "running") { try { ctx.resume(); } catch (e) {} }
+    return ctx;
+  }
+
+  // iPhone : sans ça, le bouton « silencieux » coupe tous les sons (mais pas la voix).
+  // 1) on demande le mode « lecture » (Safari 17+) ; 2) on lance un son <audio> muet en boucle,
+  // ce qui fait passer le téléphone en mode média : les sons passent même en mode silencieux.
+  function silentWavURL() {
+    var sr = 8000, n = 800, buf = new ArrayBuffer(44 + n * 2), v = new DataView(buf);
+    function w(o, s) { for (var i = 0; i < s.length; i++) v.setUint8(o + i, s.charCodeAt(i)); }
+    w(0, "RIFF"); v.setUint32(4, 36 + n * 2, true); w(8, "WAVE"); w(12, "fmt ");
+    v.setUint32(16, 16, true); v.setUint16(20, 1, true); v.setUint16(22, 1, true);
+    v.setUint32(24, sr, true); v.setUint32(28, sr * 2, true); v.setUint16(32, 2, true);
+    v.setUint16(34, 16, true); w(36, "data"); v.setUint32(40, n * 2, true);
+    return URL.createObjectURL(new Blob([buf], { type: "audio/wav" }));
+  }
+  var keepAlive = null;
+  function unlockAudio() {
+    try { if (navigator.audioSession) navigator.audioSession.type = "playback"; } catch (e) {}
+    try {
+      if (!keepAlive) {
+        keepAlive = document.createElement("audio");
+        keepAlive.setAttribute("playsinline", ""); keepAlive.setAttribute("x-webkit-airplay", "deny");
+        keepAlive.loop = true; keepAlive.preload = "auto"; keepAlive.src = silentWavURL();
       }
+      var p = keepAlive.play(); if (p && p.catch) p.catch(function () {});
+    } catch (e) {}
+    var c = getCtx();
+    // petit buffer silencieux joué dans le geste : débloque Web Audio sur iOS
+    try { var b = c.createBuffer(1, 1, 22050), s = c.createBufferSource(); s.buffer = b; s.connect(c.destination); s.start(0); } catch (e) {}
+    unlocked = true;
+  }
+  // tout premier toucher n'importe où = déblocage
+  ["touchend", "pointerup", "click"].forEach(function (ev) {
+    document.addEventListener(ev, function () { if (!unlocked) unlockAudio(); }, true);
+  });
+
+  // ---- briques de son ----
+  function tone(f, t0, dur, type, vol, fEnd, dest) {
+    var c = getCtx(), o = c.createOscillator(), g = c.createGain(), T = c.currentTime + 0.01 + t0;
+    o.type = type || "sine"; o.frequency.setValueAtTime(f, T);
+    if (fEnd) o.frequency.exponentialRampToValueAtTime(fEnd, T + dur);
+    g.gain.setValueAtTime(0.0001, T);
+    g.gain.exponentialRampToValueAtTime(vol || 0.3, T + 0.01);
+    g.gain.exponentialRampToValueAtTime(0.0001, T + dur);
+    o.connect(g); g.connect(dest || master); o.start(T); o.stop(T + dur + 0.05);
+    return o;
+  }
+  var noiseBuf = null;
+  function noise(t0, dur, vol, ftype, f1, f2, q) {
+    var c = getCtx(), T = c.currentTime + 0.01 + t0;
+    if (!noiseBuf) {
+      noiseBuf = c.createBuffer(1, c.sampleRate * 2, c.sampleRate);
+      var d = noiseBuf.getChannelData(0); for (var i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    var s = c.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+    var f = c.createBiquadFilter(); f.type = ftype || "lowpass"; f.Q.value = q || 1;
+    f.frequency.setValueAtTime(f1 || 2000, T); if (f2) f.frequency.exponentialRampToValueAtTime(f2, T + dur);
+    var g = c.createGain(); g.gain.setValueAtTime(0.0001, T);
+    g.gain.exponentialRampToValueAtTime(vol || 0.3, T + 0.02);
+    g.gain.exponentialRampToValueAtTime(0.0001, T + dur);
+    s.connect(f); f.connect(g); g.connect(master); s.start(T); s.stop(T + dur + 0.05);
+  }
+  function safe(fn) { return function () { try { fn.apply(null, arguments); } catch (e) {} }; }
+
+  /* ---------------- les sons ---------------- */
+  var SND = {
+    // ping radar spatial (écran d'intro)
+    ping: safe(function () {
+      tone(1400, 0, .09, "sine", .35, 2100); tone(1400, .14, .09, "sine", .35, 2100);
+      tone(1800, .28, .12, "sine", .35, 2800); tone(2600, .5, .6, "sine", .22, 500);
+      tone(2600, .68, .5, "sine", .08, 500); // écho
+    }),
+    // validation « accès autorisé » + souffle qui monte
+    valid: safe(function () {
+      noise(0, .45, .12, "bandpass", 400, 6000, 2);
+      tone(988, 0, .12, "square", .14); tone(1319, .13, .12, "square", .14);
+      tone(1976, .27, .45, "square", .14); tone(3952, .27, .45, "sine", .05);
+    }),
+    // décroché : clic + grésillement radio « kssshh » + bip de connexion
+    answer: safe(function () {
+      tone(1800, 0, .03, "square", .2);
+      noise(.03, .35, .25, "bandpass", 2500, 1200, 1.5);
+      tone(660, .35, .08, "sine", .3); tone(990, .43, .14, "sine", .3);
+    }),
+    // raccroché : clic + tonalité « occupé » française tuut-tuut-tuut
+    decline: safe(function () {
+      tone(300, 0, .05, "square", .2, 120);
+      for (var k = 0; k < 4; k++) tone(440, .25 + k * .5, .25, "sine", .25);
+    }),
+    // tic du clavier pendant que le texte s'écrit
+    key: safe(function () { tone(2200 + Math.random() * 1200, 0, .025, "square", .035); }),
+    // bip de localisation : plus aigu et plus fort quand il reste peu de temps
+    locate: safe(function (left) {
+      var urgent = left <= 5;
+      tone(urgent ? 1760 : 1200, 0, .07, "sine", urgent ? .22 : .1);
+      if (urgent) tone(1760, .12, .07, "sine", .22);
+    }),
+    // bips de données corrompues pendant l'effacement
+    glitch: safe(function () {
+      var f = 200 + Math.random() * 3000;
+      tone(f, 0, .04 + Math.random() * .05, Math.random() < .5 ? "square" : "sawtooth", .06, f * (0.5 + Math.random()));
+    }),
+    // décompte 3-2-1
+    count: safe(function (n) { tone(n > 0 ? 880 : 1760, 0, .18, "square", .2); }),
+    // EXPLOSION
+    boom: safe(function () {
+      noise(0, 1.6, .9, "lowpass", 4000, 60);
+      tone(90, 0, 1.2, "sine", .9, 28);
+      tone(55, .02, 1.4, "triangle", .5, 22);
+    }),
+    // suspense « tin tin TIIIN » à l'apparition du choix
+    suspense: safe(function () {
+      tone(147, 0, .25, "sawtooth", .12); tone(139, .3, .25, "sawtooth", .12);
+      tone(110, .65, 1.1, "sawtooth", .16); tone(220, .65, 1.1, "triangle", .12);
+      noise(.65, 1.0, .05, "lowpass", 300, 100);
+    }),
+    // ACCEPTÉ : fanfare + scintillements magiques
+    yes: safe(function () {
+      [[523,0],[659,.11],[784,.22]].forEach(function (n) { tone(n[0], n[1], .14, "triangle", .3); });
+      tone(1047, .33, .6, "triangle", .32); tone(1319, .33, .6, "sine", .12); tone(1568, .33, .6, "sine", .1);
+      for (var k = 0; k < 10; k++) tone(2000 + Math.random() * 2500, .5 + k * .07, .25, "sine", .07);
+    }),
+    // REFUSÉ : trombone triste « wah wah wah waaaah »
+    no: safe(function () {
+      var c = getCtx(), lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 1200; lp.connect(master);
+      tone(294, 0, .4, "sawtooth", .18, 285, lp); tone(277, .45, .4, "sawtooth", .18, 268, lp);
+      tone(262, .9, .4, "sawtooth", .18, 253, lp);
+      var o = tone(247, 1.35, 1.3, "sawtooth", .2, 240, lp);
+      var lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 6; lg.gain.value = 8;
+      lfo.connect(lg); lg.connect(o.frequency); lfo.start(c.currentTime + 1.4); lfo.stop(c.currentTime + 2.7);
+    }),
+    // « j'ai changé d'avis » : glissade « boing » + arpège joyeux
+    retry: safe(function () {
+      tone(200, 0, .25, "sine", .3, 900);
+      tone(784, .25, .08, "triangle", .3); tone(1047, .33, .08, "triangle", .3); tone(1319, .41, .25, "triangle", .3);
+    })
+  };
+
+  // ---- sonnerie de téléphone ----
+  var ringTimer = null;
+  function ringBurst() {
+    var c = getCtx(), t0 = c.currentTime;
+    [0, 0.6].forEach(function (off) {
+      var g = c.createGain(); g.gain.value = 0; g.connect(master);
+      [440, 480].forEach(function (f) {
+        var o = c.createOscillator(); o.type = "square"; o.frequency.value = f;
+        o.connect(g); o.start(t0 + off); o.stop(t0 + off + 0.45);
+      });
+      for (var k = 0; k < 8; k++) { var tk = t0 + off + k * 0.05; g.gain.setValueAtTime(0.16, tk); g.gain.setValueAtTime(0, tk + 0.025); }
     });
     buzz([400, 200, 400]);
   }
-  // ---- Bip « spatial » de transmission ----
-  function getCtx() {
-    ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
-    if (ctx.state === "suspended") ctx.resume();
-    return ctx;
+  function startRing() {
+    try { ringBurst(); ringTimer = setInterval(ringBurst, 2500); }
+    catch (e) { ringTimer = setInterval(function () { buzz([400, 200, 400]); }, 2000); }
   }
-  function spaceBeep() {
+  function stopRing() { clearInterval(ringTimer); buzz(0); }
+
+  // ---- ambiance pendant l'appel : bourdonnement grave + parasites radio ----
+  var amb = null;
+  function startAmbience() {
     try {
-      var c = getCtx(), t = c.currentTime + 0.02;
-      var out = c.createGain(); out.gain.value = 0.5; out.connect(c.destination);
-      // écho spatial
-      var dl = c.createDelay(); dl.delayTime.value = 0.18;
-      var fb = c.createGain(); fb.gain.value = 0.35;
-      out.connect(dl); dl.connect(fb); fb.connect(dl); dl.connect(c.destination);
-      function chirp(t0, f1, f2, dur, vol) {
-        var o = c.createOscillator(), g = c.createGain();
-        o.type = "sine"; o.frequency.setValueAtTime(f1, t0);
-        o.frequency.exponentialRampToValueAtTime(f2, t0 + dur);
-        g.gain.setValueAtTime(0.0001, t0);
-        g.gain.exponentialRampToValueAtTime(vol, t0 + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t0 + dur);
-        o.connect(g); g.connect(out); o.start(t0); o.stop(t0 + dur + 0.02);
-      }
-      // 3 bips montants + un balayage descendant « radar »
-      chirp(t,        1400, 2100, 0.09, 0.5);
-      chirp(t + 0.14, 1400, 2100, 0.09, 0.5);
-      chirp(t + 0.28, 1800, 2800, 0.12, 0.5);
-      chirp(t + 0.50, 2600, 500,  0.55, 0.35);
+      var c = getCtx(), g = c.createGain(); g.gain.setValueAtTime(0.0001, c.currentTime);
+      g.gain.exponentialRampToValueAtTime(0.18, c.currentTime + 1.5); g.connect(master);
+      var o1 = c.createOscillator(), o2 = c.createOscillator(); o1.frequency.value = 55; o2.frequency.value = 82.5;
+      o1.type = "sawtooth"; o2.type = "sine";
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 220;
+      var lfo = c.createOscillator(), lg = c.createGain(); lfo.frequency.value = 0.4; lg.gain.value = 90;
+      lfo.connect(lg); lg.connect(lp.frequency);
+      o1.connect(lp); o2.connect(lp); lp.connect(g);
+      getCtx(); if (!noiseBuf) noise(0, .01, .0002);
+      var s = c.createBufferSource(); s.buffer = noiseBuf; s.loop = true;
+      var bp = c.createBiquadFilter(); bp.type = "bandpass"; bp.frequency.value = 3000; bp.Q.value = 0.8;
+      var ng = c.createGain(); ng.gain.value = 0.12; s.connect(bp); bp.connect(ng); ng.connect(g);
+      [o1, o2, lfo, s].forEach(function (n) { n.start(); });
+      amb = { g: g, nodes: [o1, o2, lfo, s] };
     } catch (e) {}
   }
-  // tentative automatique à l'arrivée (fonctionne seulement si le navigateur l'autorise ;
-  // iPhone : le son ne peut démarrer qu'au premier toucher)
-  var introBeep = null;
-  try {
-    getCtx();
-    setTimeout(function () {
-      if (ctx && ctx.state === "running") { spaceBeep(); introBeep = setInterval(spaceBeep, 3000); }
-    }, 300);
-  } catch (e) {}
+  function stopAmbience() {
+    if (!amb) return;
+    try {
+      var c = getCtx(); amb.g.gain.cancelScheduledValues(c.currentTime);
+      amb.g.gain.setValueAtTime(amb.g.gain.value, c.currentTime);
+      amb.g.gain.exponentialRampToValueAtTime(0.0001, c.currentTime + 0.3);
+      var n = amb.nodes; setTimeout(function () { n.forEach(function (x) { try { x.stop(); } catch (e) {} }); }, 400);
+    } catch (e) {}
+    amb = null;
+  }
 
-  function startRing() {
+  // ---- sirène d'alarme pendant l'autodestruction ----
+  function siren(dur) {
+    try {
+      var c = getCtx(), T = c.currentTime, o = c.createOscillator(), g = c.createGain();
+      o.type = "sawtooth"; o.frequency.setValueAtTime(600, T);
+      for (var k = 0; k < dur * 2; k++) {
+        o.frequency.linearRampToValueAtTime(1150, T + k * 0.5 + 0.25);
+        o.frequency.linearRampToValueAtTime(600, T + k * 0.5 + 0.5);
+      }
+      var lp = c.createBiquadFilter(); lp.type = "lowpass"; lp.frequency.value = 2200;
+      g.gain.setValueAtTime(0.0001, T); g.gain.exponentialRampToValueAtTime(0.09, T + 0.2);
+      g.gain.setValueAtTime(0.09, T + dur - 0.1); g.gain.exponentialRampToValueAtTime(0.0001, T + dur);
+      o.connect(lp); lp.connect(g); g.connect(master); o.start(T); o.stop(T + dur + 0.05);
+    } catch (e) {}
+  }
+
+  // tentative de son automatique à l'arrivée (hors iPhone, et seulement si le navigateur l'autorise)
+  var introBeep = null;
+  if (!IOS) {
     try {
       getCtx();
-      ringBurst(); ringTimer = setInterval(ringBurst, 2500);
-    } catch (e) { ringTimer = setInterval(function () { buzz([400, 200, 400]); }, 2000); }
-  }
-  function stopRing() {
-    clearInterval(ringTimer); buzz(0);
-    ringNodes.forEach(function (o) { try { o.stop(); } catch (e) {} }); ringNodes = [];
+      setTimeout(function () {
+        if (ctx && ctx.state === "running") { SND.ping(); introBeep = setInterval(SND.ping, 3000); }
+      }, 300);
+    } catch (e) {}
   }
 
+  /* =========================================================
+     VOIX
+     ========================================================= */
   function speak() {
     if (!("speechSynthesis" in window)) return;
     try {
       var u = new SpeechSynthesisUtterance(SPOKEN);
       u.lang = "fr-FR"; u.rate = 1.05; u.pitch = 0.6; u.volume = 1;
-      // dès que la voix a fini de parler -> autodestruction (sans attendre la fin du compteur)
       u.onend = function () { setTimeout(finishCall, 800); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     } catch (e) {}
   }
-
-  // ---- Voix chaleureuse pour la révélation de la mission ----
   var MISSION_SPOKEN = "Mission confirmée. Ta mission, si tu l’acceptes : embrasser la personne qui porte ce t-shirt. Un bisou sur la joue suffira… ou un high five, si tu préfères.";
   function warmVoice() {
     var v = speechSynthesis.getVoices().filter(function (x) { return /^fr/i.test(x.lang); });
-    // voix françaises réputées douces (iPhone, Android, Windows), sinon la 1re voix française
     var pref = ["Amélie", "Audrey", "Aurélie", "Marie", "Google français", "Denise", "Julie", "Hortense"];
-    for (var i = 0; i < pref.length; i++) {
-      for (var j = 0; j < v.length; j++) if (v[j].name.indexOf(pref[i]) !== -1) return v[j];
-    }
+    for (var i = 0; i < pref.length; i++) for (var j = 0; j < v.length; j++) if (v[j].name.indexOf(pref[i]) !== -1) return v[j];
     return v[0] || null;
   }
   function speakMission() {
@@ -234,10 +391,14 @@
   }
   try { speechSynthesis.getVoices(); } catch (e) {}
 
+  /* =========================================================
+     DÉROULÉ
+     ========================================================= */
   var typer, clock, ended = false;
   function finishCall() {
     if (ended) return; ended = true;
     clearInterval(clock); clearInterval(typer); $("msg").textContent = TEXT; $("loc").textContent = 0;
+    stopAmbience();
     selfDestruct();
   }
 
@@ -245,15 +406,15 @@
     stopRing();
     show("call");
     speak();
+    startAmbience();
     var i = 0, msg = $("msg"), loc = $("loc"), left = 20;
-    // texte affiché en ~13 s (rythme proche de la voix)
     typer = setInterval(function () {
       i++; msg.textContent = TEXT.slice(0, i);
+      if (i % 2 === 0 && TEXT[i - 1] !== " ") SND.key();
       if (i >= TEXT.length) { clearInterval(typer); }
     }, 13000 / TEXT.length);
-    // filet de sécurité si la voix ne marche pas : autodestruction à 0
     clock = setInterval(function () {
-      left--; loc.textContent = Math.max(left, 0);
+      left--; loc.textContent = Math.max(left, 0); SND.locate(left);
       if (left <= 0) finishCall();
     }, 1000);
   }
@@ -263,59 +424,37 @@
     show("boom");
     document.body.classList.add("glitch");
     buzz([200, 100, 200, 100, 600]);
-    var chars = TEXT.split(""), burn = $("burn"), noise = "#@%&$*?!/\\<>01";
-    var n = 3; $("count").textContent = n;
+    siren(3);
+    var chars = TEXT.split(""), burn = $("burn"), noiseCh = "#@%&$*?!/\\<>01";
+    var n = 3; $("count").textContent = n; SND.count(n);
     var tick = setInterval(function () {
-      // abîme de plus en plus de caractères
       for (var k = 0; k < 14; k++) {
         var r = Math.floor(Math.random() * chars.length);
-        if (chars[r] !== "\n" && chars[r] !== " ") {
-          chars[r] = Math.random() < .55 ? noise[Math.floor(Math.random() * noise.length)] : " ";
-        }
+        if (chars[r] !== "\n" && chars[r] !== " ") chars[r] = Math.random() < .55 ? noiseCh[Math.floor(Math.random() * noiseCh.length)] : " ";
       }
       burn.textContent = chars.join("");
+      SND.glitch();
     }, 90);
     var cd = setInterval(function () {
       n--; $("count").textContent = n > 0 ? n : "0"; buzz(150);
+      if (n > 0) SND.count(n);
       if (n <= 0) {
         clearInterval(cd); clearInterval(tick);
+        SND.boom(); buzz([500]);
         var f = $("flash"); f.style.transition = "none"; f.style.opacity = 1;
         setTimeout(function () {
           document.body.classList.remove("glitch");
           show("choice");
           f.style.transition = "opacity .6s"; f.style.opacity = 0;
+          setTimeout(SND.suspense, 900);
         }, 120);
       }
     }, 1000);
   }
 
-  // ---- Jingles des boutons ----
-  // notes : [fréquence Hz, début s, durée s]
-  function jingle(notes, type, vol) {
-    try {
-      var c = getCtx(), t = c.currentTime + 0.01;
-      notes.forEach(function (n) {
-        var o = c.createOscillator(), g = c.createGain();
-        o.type = type || "triangle"; o.frequency.value = n[0];
-        g.gain.setValueAtTime(0.0001, t + n[1]);
-        g.gain.exponentialRampToValueAtTime(vol || 0.35, t + n[1] + 0.01);
-        g.gain.exponentialRampToValueAtTime(0.0001, t + n[1] + n[2]);
-        o.connect(g); g.connect(c.destination); o.start(t + n[1]); o.stop(t + n[1] + n[2] + 0.02);
-      });
-    } catch (e) {}
-  }
-  var SND = {
-    // validation « accès autorisé » : deux bips clairs qui montent + note finale tenue
-    valid:   function () { jingle([[988,0,.12],[1319,.13,.12],[1976,.27,.35]], "square", .18); },
-    answer:  function () { jingle([[660,0,.08],[990,.08,.14]], "sine", .4); },          // décroché
-    decline: function () { jingle([[520,0,.12],[330,.12,.22]], "sine", .4); },          // raccroché
-    yes:     function () { jingle([[523,0,.12],[659,.11,.12],[784,.22,.12],[1047,.33,.45]], "triangle", .4); }, // fanfare
-    no:      function () { jingle([[392,0,.16],[311,.16,.16],[233,.32,.4]], "sawtooth", .15); },             // échec
-    retry:   function () { jingle([[784,0,.08],[1047,.08,.08],[1319,.16,.2]], "triangle", .35); }
-  };
-
   $("go").addEventListener("click", function () {
     clearInterval(introBeep);
+    unlockAudio();
     SND.valid();
     var b = $("go"); b.disabled = true; b.textContent = "CONNEXION ÉTABLIE ✓";
     setTimeout(function () { show("ring"); startRing(); }, 1100);
