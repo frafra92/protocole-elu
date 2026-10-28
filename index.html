@@ -1,0 +1,187 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Protocole Élu</title>
+<style>
+  :root { --bg:#05080a; --fg:#39ff88; --red:#ff3b3b; --dim:#1b6b3f; }
+  * { box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  html, body { margin:0; height:100%; background:var(--bg); color:var(--fg);
+    font-family: "Courier New", ui-monospace, monospace; overflow:hidden; }
+  body::after { content:""; position:fixed; inset:0; pointer-events:none;
+    background: repeating-linear-gradient(0deg, rgba(0,0,0,.18) 0 1px, transparent 1px 3px); }
+  .screen { position:absolute; inset:0; display:none; flex-direction:column; align-items:center;
+    justify-content:center; padding:max(24px, env(safe-area-inset-top)) 24px max(24px, env(safe-area-inset-bottom));
+    text-align:center; gap:22px; }
+  .screen.on { display:flex; }
+  h1 { font-size:1.5rem; letter-spacing:.12em; margin:0; line-height:1.3; }
+  p { margin:0; line-height:1.5; }
+  .small { font-size:.8rem; color:var(--dim); }
+  button { font:inherit; font-size:1.05rem; letter-spacing:.08em; padding:16px 22px; min-width:240px;
+    background:transparent; color:var(--fg); border:2px solid var(--fg); border-radius:10px; cursor:pointer; }
+  button:active { background:var(--fg); color:var(--bg); }
+  button.danger { color:var(--red); border-color:var(--red); }
+  button.danger:active { background:var(--red); color:var(--bg); }
+
+  /* appel entrant */
+  #ring { background: radial-gradient(circle at 50% 30%, #12202a, #05080a 70%); color:#e8f1f5; }
+  .avatar { width:110px; height:110px; border-radius:50%; background:#1d2b34; border:2px solid #3a4f5c;
+    display:flex; align-items:center; justify-content:center; font-size:3rem; animation:pulse 1.2s infinite; }
+  @keyframes pulse { 0%{box-shadow:0 0 0 0 rgba(57,255,136,.5)} 100%{box-shadow:0 0 0 40px rgba(57,255,136,0)} }
+  .callrow { display:flex; gap:48px; margin-top:30px; }
+  .round { min-width:0; width:76px; height:76px; border-radius:50%; padding:0; font-size:1.8rem; border:none; }
+  .green { background:#2ecc71; color:#fff; animation:shake .6s infinite; }
+  .red { background:#e74c3c; color:#fff; }
+  @keyframes shake { 0%,100%{transform:rotate(0)} 25%{transform:rotate(-12deg)} 75%{transform:rotate(12deg)} }
+
+  /* appel en cours */
+  #bar { position:absolute; top:max(16px, env(safe-area-inset-top)); left:0; right:0; font-size:.85rem; color:var(--red);
+    letter-spacing:.1em; }
+  #msg { font-size:1.2rem; text-align:left; min-height:11em; white-space:pre-wrap; width:100%; max-width:480px; }
+  .cursor::after { content:"▌"; animation:blink 1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+
+  /* autodestruction */
+  .glitch { animation: glitch .25s infinite; }
+  @keyframes glitch {
+    0%{transform:translate(0,0) skew(0)} 20%{transform:translate(-6px,3px) skew(3deg)}
+    40%{transform:translate(5px,-4px) skew(-4deg)} 60%{transform:translate(-3px,-2px)}
+    80%{transform:translate(6px,2px) skew(2deg)} 100%{transform:translate(0,0)} }
+  #count { font-size:5rem; color:var(--red); font-weight:bold; }
+  #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:9; }
+
+  #mission { font-size:1.9rem; line-height:1.3; color:#fff; text-shadow:0 0 14px var(--fg); }
+  .stamp { border:3px solid var(--fg); padding:6px 14px; transform:rotate(-4deg); letter-spacing:.2em; }
+</style>
+</head>
+<body>
+
+<!-- 0. Appel entrant -->
+<section id="ring" class="screen on">
+  <p class="small" style="color:#8aa">Appel entrant…</p>
+  <div class="avatar">?</div>
+  <h1 style="color:#fff">NUMÉRO MASQUÉ</h1>
+  <p style="color:#9ab">Mobile · appel chiffré</p>
+  <div class="callrow">
+    <button class="round red" id="decline" aria-label="Refuser">✕</button>
+    <button class="round green" id="answer" aria-label="Répondre">✆</button>
+  </div>
+</section>
+
+<!-- 1. Message mystérieux -->
+<section id="call" class="screen">
+  <div id="bar">● APPEL SÉCURISÉ — LOCALISATION DANS <span id="loc">10</span> s</div>
+  <p id="msg" class="cursor"></p>
+</section>
+
+<!-- 2. Autodestruction -->
+<section id="boom" class="screen">
+  <p>⚠ MESSAGE COMPROMIS ⚠</p>
+  <div id="count">3</div>
+  <p id="burn" style="max-width:480px;text-align:left;font-size:1.1rem"></p>
+</section>
+
+<!-- 3. Choix -->
+<section id="choice" class="screen">
+  <p class="small">TRANSMISSION INTERROMPUE</p>
+  <h1>ACCEPTES-TU<br>LA MISSION ?</h1>
+  <button id="yes">ACCEPTER LA MISSION</button>
+  <button id="no" class="danger">REFUSER LA MISSION</button>
+</section>
+
+<!-- 4a. Révélation -->
+<section id="reveal" class="screen">
+  <div class="stamp">MISSION CONFIRMÉE</div>
+  <p class="small">TA MISSION, SI TU L’ACCEPTES :</p>
+  <p id="mission">EMBRASSER LA PERSONNE QUI PORTE CE T-SHIRT.</p>
+  <p class="small">(Un baiser sur la joue, la main, ou même une bise<br>si vous en avez envie tous les deux.<br>Sinon : un high five fera l’affaire. 🙂)</p>
+</section>
+
+<!-- 4b. Refus -->
+<section id="refused" class="screen">
+  <h1>MISSION REFUSÉE</h1>
+  <p>Cette conversation ne s’est jamais produite.<br>Va en paix, agent.</p>
+  <button id="retry">…finalement, j’ai changé d’avis</button>
+</section>
+
+<div id="flash"></div>
+
+<script>
+(function () {
+  var $ = function (id) { return document.getElementById(id); };
+  var screens = ["ring","call","boom","choice","reveal","refused"];
+  function show(id) { screens.forEach(function (s) { $(s).classList.toggle("on", s === id); }); }
+  function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
+
+  var TEXT = "Allô ? Écoute-moi attentivement !\n\nJe n’ai que dix secondes avant que cet appel soit localisé.\n\nTu as été choisi. Tu détiens un pouvoir exceptionnel.\n\nUne mission de la plus haute importance t’attend.";
+  var SPOKEN = "Allô ? Écoute-moi attentivement ! Je n’ai que dix secondes avant que cet appel soit localisé. Tu as été choisi. Tu détiens un pouvoir exceptionnel. Une mission de la plus haute importance t’attend.";
+
+  // vibration de sonnerie tant qu'on n'a pas répondu
+  var ringTimer = setInterval(function () { buzz([400, 200, 400]); }, 2000);
+
+  function speak() {
+    if (!("speechSynthesis" in window)) return;
+    try {
+      var u = new SpeechSynthesisUtterance(SPOKEN);
+      u.lang = "fr-FR"; u.rate = 1.05; u.pitch = 0.6; u.volume = 1;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+
+  function startCall() {
+    clearInterval(ringTimer); buzz(0);
+    show("call");
+    speak();
+    var i = 0, msg = $("msg"), loc = $("loc"), left = 10;
+    var typer = setInterval(function () {
+      i++; msg.textContent = TEXT.slice(0, i);
+      if (i >= TEXT.length) { clearInterval(typer); }
+    }, 10000 / TEXT.length * 0.85);
+    var clock = setInterval(function () {
+      left--; loc.textContent = Math.max(left, 0);
+      if (left <= 0) { clearInterval(clock); clearInterval(typer); msg.textContent = TEXT; selfDestruct(); }
+    }, 1000);
+  }
+
+  function selfDestruct() {
+    try { speechSynthesis.cancel(); } catch (e) {}
+    show("boom");
+    document.body.classList.add("glitch");
+    buzz([200, 100, 200, 100, 600]);
+    var chars = TEXT.split(""), burn = $("burn"), noise = "#@%&$*?!/\\<>01";
+    var n = 3; $("count").textContent = n;
+    var tick = setInterval(function () {
+      // abîme de plus en plus de caractères
+      for (var k = 0; k < 14; k++) {
+        var r = Math.floor(Math.random() * chars.length);
+        if (chars[r] !== "\n" && chars[r] !== " ") {
+          chars[r] = Math.random() < .55 ? noise[Math.floor(Math.random() * noise.length)] : " ";
+        }
+      }
+      burn.textContent = chars.join("");
+    }, 90);
+    var cd = setInterval(function () {
+      n--; $("count").textContent = n > 0 ? n : "0"; buzz(150);
+      if (n <= 0) {
+        clearInterval(cd); clearInterval(tick);
+        var f = $("flash"); f.style.transition = "none"; f.style.opacity = 1;
+        setTimeout(function () {
+          document.body.classList.remove("glitch");
+          show("choice");
+          f.style.transition = "opacity .6s"; f.style.opacity = 0;
+        }, 120);
+      }
+    }, 1000);
+  }
+
+  $("answer").addEventListener("click", startCall);
+  $("decline").addEventListener("click", function () { clearInterval(ringTimer); show("refused"); });
+  $("yes").addEventListener("click", function () { show("reveal"); buzz([100, 60, 100, 60, 300]); });
+  $("no").addEventListener("click", function () { show("refused"); });
+  $("retry").addEventListener("click", function () { show("choice"); });
+})();
+</script>
+</body>
+</html>
