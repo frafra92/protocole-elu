@@ -52,14 +52,27 @@
   #count { font-size:5rem; color:var(--red); font-weight:bold; }
   #flash { position:fixed; inset:0; background:#fff; opacity:0; pointer-events:none; z-index:9; }
 
+  /* écran de démarrage (débloque le son) */
+  #intro h1 { color:var(--red); animation:blink 1.2s steps(1) infinite; }
+  #intro .sig { font-size:.9rem; color:var(--dim); letter-spacing:.15em; }
+
   #mission { font-size:1.9rem; line-height:1.3; color:#fff; text-shadow:0 0 14px var(--fg); }
   .stamp { border:3px solid var(--fg); padding:6px 14px; transform:rotate(-4deg); letter-spacing:.2em; }
 </style>
 </head>
 <body>
 
+<!-- 00. Démarrage : un toucher est obligatoire pour que le téléphone autorise le son -->
+<section id="intro" class="screen on">
+  <p class="sig">▮▮▮▯▯ SIGNAL CRYPTÉ</p>
+  <h1>⚠ TRANSMISSION ENTRANTE</h1>
+  <p style="color:#9ab">Une communication confidentielle t’est destinée.</p>
+  <button id="go">ÉTABLIR LA CONNEXION</button>
+  <p class="small">Monte le son.</p>
+</section>
+
 <!-- 0. Appel entrant -->
-<section id="ring" class="screen on">
+<section id="ring" class="screen">
   <p class="small" style="color:#8aa">Appel entrant…</p>
   <div class="avatar">?</div>
   <h1 style="color:#fff">NUMÉRO MASQUÉ</h1>
@@ -72,7 +85,7 @@
 
 <!-- 1. Message mystérieux -->
 <section id="call" class="screen">
-  <div id="bar">● APPEL SÉCURISÉ — LOCALISATION DANS <span id="loc">10</span> s</div>
+  <div id="bar">● APPEL SÉCURISÉ — LOCALISATION DANS <span id="loc">20</span> s</div>
   <p id="msg" class="cursor"></p>
 </section>
 
@@ -111,37 +124,76 @@
 <script>
 (function () {
   var $ = function (id) { return document.getElementById(id); };
-  var screens = ["ring","call","boom","choice","reveal","refused"];
+  var screens = ["intro","ring","call","boom","choice","reveal","refused"];
   function show(id) { screens.forEach(function (s) { $(s).classList.toggle("on", s === id); }); }
   function buzz(p) { try { navigator.vibrate && navigator.vibrate(p); } catch (e) {} }
 
-  var TEXT = "Allô ? Écoute-moi attentivement !\n\nJe n’ai que dix secondes avant que cet appel soit localisé.\n\nTu as été choisi. Tu détiens un pouvoir exceptionnel.\n\nUne mission de la plus haute importance t’attend.";
-  var SPOKEN = "Allô ? Écoute-moi attentivement ! Je n’ai que dix secondes avant que cet appel soit localisé. Tu as été choisi. Tu détiens un pouvoir exceptionnel. Une mission de la plus haute importance t’attend.";
+  var TEXT = "Allô ? Écoute-moi attentivement !\n\nJe n’ai que quelques secondes avant que cet appel soit localisé.\n\nTu as été choisi. Tu détiens un pouvoir exceptionnel.\n\nUne mission de la plus haute importance t’attend.";
+  var SPOKEN = "Allô ? Écoute-moi attentivement ! Je n’ai que quelques secondes avant que cet appel soit localisé. Tu as été choisi. Tu détiens un pouvoir exceptionnel. Une mission de la plus haute importance t’attend.";
 
-  // vibration de sonnerie tant qu'on n'a pas répondu
-  var ringTimer = setInterval(function () { buzz([400, 200, 400]); }, 2000);
+  // ---- Sonnerie de téléphone (générée, aucun fichier audio) ----
+  var ctx = null, ringTimer = null, ringNodes = [];
+  function ringBurst() {
+    // motif « drrring-drrring » : 2 salves de 0,4 s, fréquences 440+480 Hz trillées
+    var t0 = ctx.currentTime;
+    [0, 0.6].forEach(function (off) {
+      var g = ctx.createGain(); g.gain.value = 0; g.connect(ctx.destination);
+      [440, 480].forEach(function (f) {
+        var o = ctx.createOscillator(); o.type = "square"; o.frequency.value = f;
+        o.connect(g); o.start(t0 + off); o.stop(t0 + off + 0.45); ringNodes.push(o);
+      });
+      // trille : le volume pulse 20 fois par seconde
+      for (var k = 0; k < 8; k++) {
+        var tk = t0 + off + k * 0.05;
+        g.gain.setValueAtTime(0.18, tk); g.gain.setValueAtTime(0.0, tk + 0.025);
+      }
+    });
+    buzz([400, 200, 400]);
+  }
+  function startRing() {
+    try {
+      ctx = ctx || new (window.AudioContext || window.webkitAudioContext)();
+      if (ctx.state === "suspended") ctx.resume();
+      ringBurst(); ringTimer = setInterval(ringBurst, 2500);
+    } catch (e) { ringTimer = setInterval(function () { buzz([400, 200, 400]); }, 2000); }
+  }
+  function stopRing() {
+    clearInterval(ringTimer); buzz(0);
+    ringNodes.forEach(function (o) { try { o.stop(); } catch (e) {} }); ringNodes = [];
+  }
 
   function speak() {
     if (!("speechSynthesis" in window)) return;
     try {
       var u = new SpeechSynthesisUtterance(SPOKEN);
       u.lang = "fr-FR"; u.rate = 1.05; u.pitch = 0.6; u.volume = 1;
+      // dès que la voix a fini de parler -> autodestruction (sans attendre la fin du compteur)
+      u.onend = function () { setTimeout(finishCall, 800); };
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     } catch (e) {}
   }
 
+  var typer, clock, ended = false;
+  function finishCall() {
+    if (ended) return; ended = true;
+    clearInterval(clock); clearInterval(typer); $("msg").textContent = TEXT; $("loc").textContent = 0;
+    selfDestruct();
+  }
+
   function startCall() {
-    clearInterval(ringTimer); buzz(0);
+    stopRing();
     show("call");
     speak();
-    var i = 0, msg = $("msg"), loc = $("loc"), left = 10;
-    var typer = setInterval(function () {
+    var i = 0, msg = $("msg"), loc = $("loc"), left = 20;
+    // texte affiché en ~13 s (rythme proche de la voix)
+    typer = setInterval(function () {
       i++; msg.textContent = TEXT.slice(0, i);
       if (i >= TEXT.length) { clearInterval(typer); }
-    }, 10000 / TEXT.length * 0.85);
-    var clock = setInterval(function () {
+    }, 13000 / TEXT.length);
+    // filet de sécurité si la voix ne marche pas : autodestruction à 0
+    clock = setInterval(function () {
       left--; loc.textContent = Math.max(left, 0);
-      if (left <= 0) { clearInterval(clock); clearInterval(typer); msg.textContent = TEXT; selfDestruct(); }
+      if (left <= 0) finishCall();
     }, 1000);
   }
 
@@ -176,8 +228,9 @@
     }, 1000);
   }
 
+  $("go").addEventListener("click", function () { show("ring"); startRing(); });
   $("answer").addEventListener("click", startCall);
-  $("decline").addEventListener("click", function () { clearInterval(ringTimer); show("refused"); });
+  $("decline").addEventListener("click", function () { stopRing(); show("refused"); });
   $("yes").addEventListener("click", function () { show("reveal"); buzz([100, 60, 100, 60, 300]); });
   $("no").addEventListener("click", function () { show("refused"); });
   $("retry").addEventListener("click", function () { show("choice"); });
