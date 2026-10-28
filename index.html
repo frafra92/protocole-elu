@@ -173,6 +173,28 @@
     } catch (e) {}
   }
 
+  // ---- Voix chaleureuse pour la révélation de la mission ----
+  var MISSION_SPOKEN = "Mission confirmée. Ta mission, si tu l’acceptes : embrasser la personne qui porte ce t-shirt. Un bisou sur la joue suffira… ou un high five, si tu préfères.";
+  function warmVoice() {
+    var v = speechSynthesis.getVoices().filter(function (x) { return /^fr/i.test(x.lang); });
+    // voix françaises réputées douces (iPhone, Android, Windows), sinon la 1re voix française
+    var pref = ["Amélie", "Audrey", "Aurélie", "Marie", "Google français", "Denise", "Julie", "Hortense"];
+    for (var i = 0; i < pref.length; i++) {
+      for (var j = 0; j < v.length; j++) if (v[j].name.indexOf(pref[i]) !== -1) return v[j];
+    }
+    return v[0] || null;
+  }
+  function speakMission() {
+    if (!("speechSynthesis" in window)) return;
+    try {
+      var u = new SpeechSynthesisUtterance(MISSION_SPOKEN);
+      u.lang = "fr-FR"; u.rate = 0.9; u.pitch = 1.15; u.volume = 1;
+      var w = warmVoice(); if (w) u.voice = w;
+      speechSynthesis.cancel(); speechSynthesis.speak(u);
+    } catch (e) {}
+  }
+  try { speechSynthesis.getVoices(); } catch (e) {}
+
   var typer, clock, ended = false;
   function finishCall() {
     if (ended) return; ended = true;
@@ -231,7 +253,7 @@
   $("go").addEventListener("click", function () { show("ring"); startRing(); });
   $("answer").addEventListener("click", startCall);
   $("decline").addEventListener("click", function () { stopRing(); show("refused"); });
-  $("yes").addEventListener("click", function () { show("reveal"); buzz([100, 60, 100, 60, 300]); });
+  $("yes").addEventListener("click", function () { show("reveal"); buzz([100, 60, 100, 60, 300]); speakMission(); });
   $("no").addEventListener("click", function () { show("refused"); });
   $("retry").addEventListener("click", function () { show("choice"); });
 })();
