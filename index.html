@@ -184,7 +184,7 @@
 <section id="reveal" class="screen">
   <div class="stamp" id="stamp">MISSION CONFIRMÉE</div>
   <p class="small">TA MISSION, SI TU L’ACCEPTES :</p>
-  <p id="mission">EMBRASSER LA PERSONNE QUI PORTE CE T-SHIRT.</p>
+  <p id="mission">VIENS ME FAIRE<br>UN BISOU. 💋</p>
   <p id="mtimer">TEMPS IMPARTI : <b id="mt">60</b> s</p>
   <p class="small">(Un baiser sur la joue, la main, ou même une bise<br>si vous en avez envie tous les deux.<br>Sinon : un high five fera l’affaire. 🙂)</p>
 </section>
@@ -457,7 +457,7 @@
       speechSynthesis.cancel(); speechSynthesis.speak(u);
     } catch (e) {}
   }
-  var MISSION_SPOKEN = "Mission confirmée. Ta mission, si tu l’acceptes : embrasser la personne qui porte ce t-shirt. Un bisou sur la joue suffira… ou un high five, si tu préfères.";
+  var MISSION_SPOKEN = "Mission confirmée. Ta mission, si tu l’acceptes : viens me faire un bisou. Un bisou sur la joue suffira… ou un high five, si tu préfères.";
   function warmVoice() {
     var v = speechSynthesis.getVoices().filter(function (x) { return /^fr/i.test(x.lang); });
     var pref = ["Amélie", "Audrey", "Aurélie", "Marie", "Google français", "Denise", "Julie", "Hortense"];
